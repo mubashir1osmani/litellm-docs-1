@@ -2,6 +2,15 @@
   margin: 0;
 }
 
+/* Visually hidden but reachable by bots — do not use display:none */
+.honeypot {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
 .row {
   display: flex;
   gap: 0.5rem;
@@ -24,6 +33,10 @@
 
 .input:focus {
   border-color: #0ea5e9;
+}
+
+.inputError {
+  border-color: #ef4444 !important;
 }
 
 .btn {
