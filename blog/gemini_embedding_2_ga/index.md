@@ -1,10 +1,10 @@
 ---
-slug: gemini_embedding_2_multimodal
-title: "Gemini Embedding 2 Preview: Multimodal Embeddings on LiteLLM"
-date: 2025-03-11T10:00:00
+slug: gemini_embedding_2_ga
+title: "Gemini Embedding 2 (GA): Multimodal Embeddings on LiteLLM"
+date: 2026-04-24T10:00:00
 authors:
   - sameer
-description: "Generate embeddings from text, images, audio, video, and PDFs with gemini-embedding-2-preview on LiteLLM via Gemini API (one vector per input, OpenAI-compatible) and Vertex AI (single unified vector per request)."
+description: "Use generally available gemini-embedding-2 for multimodal embeddings on LiteLLM via Gemini API and Vertex AI—the same flows as preview, stable model id."
 tags: [gemini, embeddings, multimodal, vertex ai]
 hide_table_of_contents: false
 ---
@@ -12,29 +12,25 @@ hide_table_of_contents: false
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Gemini Embedding 2 Preview: Multimodal Embeddings
+# Gemini Embedding 2 (GA): Multimodal Embeddings
 
-LiteLLM now supports **multimodal embeddings** with `gemini-embedding-2-preview`—mixing text, images, audio, video, and PDF content in a single request. Available via both the **Gemini API** (API key) and **Vertex AI** (GCP credentials).
+Litellm now fully supports Gemini Embedding 2 GA.
 
-:::info Response shape differs by provider
-
-- **Gemini API** (`gemini/...`): each input element returns its own embedding, indexed `0..N-1` — same shape as OpenAI's `/embeddings`. LiteLLM routes to the [`batchEmbedContents`](https://ai.google.dev/api/embeddings#method:-models.batchembedcontents) endpoint with one `EmbedContentRequest` per input.
-- **Vertex AI** (`vertex_ai/...`): all input elements are combined into a single unified embedding via [`embedContent`](https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/multimodal-embeddings-api). Vertex AI does not expose `batchEmbedContents` for Gemini embedding models, so `N` parts → `1` vector. To get one vector per item, call `embedding(...)` once per input.
-
+:::info
+For end-to-end behavior, input shapes, and MIME types, see the [Gemini Embedding 2 Preview walkthrough](/blog/gemini_embedding_2_multimodal). This post focuses on **GA naming**, **cost map** coverage.
 :::
-
 
 {/* truncate */}
 
 ## Supported Input Types
 
-| Modality | Supported Formats | 
+| Modality | Supported Formats |
 |----------|-------------------|
 | **Text** | Plain text |
-| **Image** | PNG, JPEG | 
-| **Audio** | MP3, WAV | 
-| **Video** | MP4, MOV | 
-| **Documents** | PDF | 
+| **Image** | PNG, JPEG |
+| **Audio** | MP3, WAV |
+| **Video** | MP4, MOV |
+| **Documents** | PDF |
 
 ## Input Formats
 
@@ -57,7 +53,7 @@ os.environ["GEMINI_API_KEY"] = "your-api-key"
 
 # Text + Image (base64)
 response = embedding(
-    model="gemini/gemini-embedding-2-preview",
+    model="gemini/gemini-embedding-2",
     input=[
         "The food was delicious and the waiter...",
         "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbtEAAAAASUVORK5CYII"
@@ -79,7 +75,7 @@ litellm.vertex_location = "us-central1"
 
 # Text + Image (GCS URL)
 response = embedding(
-    model="vertex_ai/gemini-embedding-2-preview",
+    model="vertex_ai/gemini-embedding-2",
     input=[
         "Describe this image",
         "gs://my-bucket/images/photo.png"
@@ -96,15 +92,15 @@ print(response)
 
 ```yaml
 model_list:
-  - model_name: gemini-embedding-2-preview
+  - model_name: gemini-embedding-2
     litellm_params:
-      model: gemini/gemini-embedding-2-preview
+      model: gemini/gemini-embedding-2
       api_key: os.environ/GEMINI_API_KEY
-  - model_name: vertex-gemini-embedding-2-preview
+  - model_name: vertex-gemini-embedding-2
     litellm_params:
-      model: vertex_ai/gemini-embedding-2-preview
+      model: vertex_ai/gemini-embedding-2
       vertex_project: os.environ/VERTEXAI_PROJECT
-      vertex_location: os.environ/VERTEXAI_LOCATION
+      vertex_location: global
 
 general_settings:
   master_key: sk-1234
@@ -116,14 +112,14 @@ general_settings:
 litellm --config config.yaml
 ```
 
-**3. Call embeddings**
+**3. Call embeddings** (OpenAI-compatible **`POST /v1/embeddings`** on the proxy)
 
 ```bash
-curl -X POST http://localhost:4000/embeddings \
+curl -sS -X POST http://localhost:4000/v1/embeddings \
   -H "Authorization: Bearer sk-1234" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gemini-embedding-2-preview",
+    "model": "gemini-embedding-2",
     "input": [
       "The food was delicious and the waiter...",
       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbtEAAAAASUVORK5CYII"
@@ -169,36 +165,8 @@ For Vertex AI, MIME types are inferred from file extensions:
 
 ```python
 response = embedding(
-    model="gemini/gemini-embedding-2-preview",
+    model="gemini/gemini-embedding-2",
     input=["text to embed"],
     dimensions=768,  # Optional: control output vector size
 )
 ```
-
-## Combined Embeddings (Gemini API, opt-in)
-
-By default the Gemini API path returns one embedding per input element (OpenAI-compatible). To fuse several modalities into a **single** vector — e.g., a product represented by its name + photo — wrap them in a nested list:
-
-```python
-from litellm import embedding
-
-# Default: 2 inputs → 2 separate embeddings
-embedding(
-    model="gemini/gemini-embedding-2-preview",
-    input=["a red shoe", "data:image/png;base64,..."],
-)
-
-# Combined: text + image fused into 1 embedding
-embedding(
-    model="gemini/gemini-embedding-2-preview",
-    input=[["a red shoe", "data:image/png;base64,..."]],
-)
-
-# Mixed: 1 combined entity + 1 plain text → 2 embeddings total
-embedding(
-    model="gemini/gemini-embedding-2-preview",
-    input=[["a red shoe", "data:image/png;base64,..."], "just text"],
-)
-```
-
-Useful for multi-modal retrieval where a single entity has more than one modality. See the [embedding docs](../../docs/embedding/supported_embedding#combined-multimodal-embeddings) for details. On Vertex AI this opt-in is unnecessary — every request already returns one combined vector.
