@@ -184,6 +184,7 @@ const config = {
         showReadingTime: false,
         sortPosts: 'descending',
         include: ['**/index.{md,mdx}'],
+        remarkPlugins: [require('./src/remark/raw-markdown')],
       },
     ],
 
@@ -230,8 +231,12 @@ const config = {
             : undefined,
         docs: {
           sidebarPath: require.resolve('./sidebars.js'),
+          remarkPlugins: [require('./src/remark/raw-markdown')],
         },
         blog: false, // Disable the default blog plugin from preset-classic
+        pages: {
+          remarkPlugins: [require('./src/remark/raw-markdown')],
+        },
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
         },

@@ -100,6 +100,32 @@ Use just 1 line of code, to instantly log your LLM responses **across all provid
 litellm.callbacks = ["otel"]
 ```
 
+## Running Multiple OpenTelemetry Handlers
+
+You can run more than one OpenTelemetry handler in the same process, for example a generic OTLP exporter alongside a backend-specific subclass. Set `skip_set_global=True` on every handler past the first so each one gets its own private `TracerProvider`, `MeterProvider`, and `LoggerProvider`. Spans, metrics, and log events then flow only through that handler's exporter.
+
+```python
+import litellm
+from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
+
+# Primary handler. Claims the global TracerProvider.
+primary = OpenTelemetry(config=OpenTelemetryConfig(
+    exporter="otlp_http",
+    endpoint="https://your-collector/v1/traces",
+))
+
+# Secondary handler. Has its own private providers.
+secondary = OpenTelemetry(config=OpenTelemetryConfig(
+    exporter="otlp_http",
+    endpoint="https://second-collector/v1/traces",
+    skip_set_global=True,
+))
+
+litellm.callbacks = [primary, secondary]
+```
+
+Init order does not matter. Both handlers receive their own spans regardless of which is constructed first.
+
 ## Redacting Messages, Response Content from OpenTelemetry Logging
 
 ### Redact Messages and Responses from all OpenTelemetry Logging
