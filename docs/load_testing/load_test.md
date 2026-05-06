@@ -40,7 +40,7 @@ model_list:
 
   Set Users=100, Ramp Up Users=10, Host=Base URL of your LiteLLM Proxy
 
-  <Image img={require('../img/locust_load_test.png')} />
+  <Image img={require('../../img/locust_load_test.png')} />
 
 6. Expected Results
 
@@ -49,5 +49,5 @@ model_list:
 
   Avg →  /health/readiness is `219ms`
 
-  <Image img={require('../img/litellm_load_test.png')} />
+  <Image img={require('../../img/litellm_load_test.png')} />
 

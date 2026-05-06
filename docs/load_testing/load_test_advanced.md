@@ -89,7 +89,7 @@ litellm_settings:
 
 6. Expected results 
 
-  <Image img={require('../img/locust_load_test1.png')} />
+  <Image img={require('../../img/locust_load_test1.png')} />
 
 ## Load test - Endpoints with Rate Limits
 
@@ -153,7 +153,7 @@ litellm_settings:
 
   Head to the locust UI on http://0.0.0.0:8089 and use the following settings
 
-  <Image img={require('../img/locust_load_test2_setup.png')} />
+  <Image img={require('../../img/locust_load_test2_setup.png')} />
 
 6. Expected results
     - Successful responses in 1 minute = 19,800 = (69415 - 49615)
@@ -161,7 +161,7 @@ litellm_settings:
     - Median response time = 70ms
     - Average response time = 640ms
 
-  <Image img={require('../img/locust_load_test2.png')} />
+  <Image img={require('../../img/locust_load_test2.png')} />
 
 
 ## Prometheus Metrics for debugging load tests
