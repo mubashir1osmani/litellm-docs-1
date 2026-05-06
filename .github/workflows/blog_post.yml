@@ -1,0 +1,153 @@
+name: Blog subscriber notifications
+
+on:
+  push:
+    branches: [main]
+    paths: ['blog/**']
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect new blog post and notify Loops
+        env:
+          LOOPS_API_KEY: ${{ secrets.LOOPS_API_KEY }}
+        run: |
+          python3 - <<'EOF'
+          import os, re, json, time, urllib.request, urllib.error, subprocess
+
+          API_KEY = os.environ['LOOPS_API_KEY']
+          SITE_URL = 'https://docs.litellm.ai'
+
+          # --- detect new post from git diff ---
+          result = subprocess.run(
+              ['git', 'diff', '--name-only', '--diff-filter=A', 'HEAD~1', 'HEAD', '--', 'blog/**/*.md', 'blog/**/*.mdx'],
+              capture_output=True, text=True
+          )
+          new_files = [f for f in result.stdout.strip().splitlines() if f]
+
+          if len(new_files) > 1:
+              print(f'Warning: {len(new_files)} new posts detected, notifying for first only: {new_files[0]}')
+
+          new_post = None
+          if new_files:
+              content = open(new_files[0]).read()
+              title = re.search(r'^title:\s*["\']?(.*?)["\']?\s*$', content, re.M)
+              slug  = re.search(r'^slug:\s*(\S+)', content, re.M)
+              desc  = re.search(r'^description:\s*["\']?(.*?)["\']?\s*$', content, re.M)
+              if title and slug:
+                  new_post = {
+                      'postTitle':       title.group(1).strip('\'"'),
+                      'postDescription': desc.group(1).strip('\'"') if desc else '',
+                      'postUrl':         f'{SITE_URL}/blog/{slug.group(1)}',
+                  }
+                  print(f"New post detected: {new_post['postTitle']}")
+
+          if not new_post:
+              print('No new blog post detected, exiting.')
+              raise SystemExit(0)
+
+          # --- parse 3 most recent posts ---
+          posts = []
+          for entry in os.scandir('blog'):
+              if not entry.is_dir():
+                  continue
+              for fname in ('index.md', 'index.mdx'):
+                  fpath = os.path.join(entry.path, fname)
+                  if not os.path.exists(fpath):
+                      continue
+                  c = open(fpath).read()
+                  t = re.search(r'^title:\s*["\']?(.*?)["\']?\s*$', c, re.M)
+                  d = re.search(r'^date:\s*(\S+)', c, re.M)
+                  s = re.search(r'^slug:\s*(\S+)', c, re.M)
+                  desc = re.search(r'^description:\s*["\']?(.*?)["\']?\s*$', c, re.M)
+                  if t and d:
+                      posts.append({
+                          'title':       t.group(1).strip('\'"'),
+                          'date':        d.group(1),
+                          'description': desc.group(1).strip('\'"') if desc else '',
+                          'url':         f'{SITE_URL}/blog/{s.group(1) if s else entry.name}',
+                      })
+                  break
+          posts.sort(key=lambda p: p['date'], reverse=True)
+          latest = posts[:3]
+
+          def p(i, k):
+              return latest[i][k] if i < len(latest) else ''
+
+          contact_props = {
+              'latestPost1Title':       p(0, 'title'),
+              'latestPost1Description': p(0, 'description'),
+              'latestPost1Url':         p(0, 'url'),
+              'latestPost2Title':       p(1, 'title'),
+              'latestPost2Description': p(1, 'description'),
+              'latestPost2Url':         p(1, 'url'),
+              'latestPost3Title':       p(2, 'title'),
+              'latestPost3Description': p(2, 'description'),
+              'latestPost3Url':         p(2, 'url'),
+          }
+
+          # --- loops API helper with retry ---
+          def loops(method, path, data=None, retries=3):
+              url = f'https://app.loops.so/api/v1{path}'
+              for attempt in range(retries):
+                  req = urllib.request.Request(
+                      url,
+                      headers={'Authorization': f'Bearer {API_KEY}', 'Content-Type': 'application/json'},
+                      method=method,
+                      data=json.dumps(data).encode() if data else None,
+                  )
+                  try:
+                      with urllib.request.urlopen(req) as r:
+                          return json.load(r)
+                  except urllib.error.HTTPError as e:
+                      body = e.read().decode()[:200]
+                      if e.code == 429 or e.code >= 500:
+                          wait = 2 ** attempt
+                          print(f'  HTTP {e.code} on attempt {attempt+1}, retrying in {wait}s: {body}', flush=True)
+                          time.sleep(wait)
+                      else:
+                          print(f'  HTTP {e.code} (not retrying): {body}', flush=True)
+                          return {}
+              print(f'  Failed after {retries} attempts: {method} {path}', flush=True)
+              return {}
+
+          # --- fetch ALL contacts using cursor-based pagination ---
+          contacts = []
+          cursor = None
+          while True:
+              path = '/contacts?limit=100'
+              if cursor:
+                  path += f'&after={cursor}'
+              resp = loops('GET', path)
+              batch = resp.get('contacts', [])
+              contacts.extend(batch)
+              cursor = resp.get('pagination', {}).get('after')
+              if not batch or not cursor:
+                  break
+
+          print(f'{len(contacts)} subscribers')
+
+          errors = 0
+          for contact in contacts:
+              email = contact.get('email')
+              if not email:
+                  continue
+              r1 = loops('PUT', '/contacts/update', {'email': email, **contact_props})
+              r2 = loops('POST', '/events/send', {
+                  'email': email,
+                  'eventName': 'new_blog_post',
+                  'eventProperties': {**new_post, **contact_props},
+              })
+              if not r1 or not r2:
+                  errors += 1
+              time.sleep(0.05)
+
+          if errors:
+              print(f'Warning: {errors} contacts had delivery errors.')
+          print('done')
+          EOF
