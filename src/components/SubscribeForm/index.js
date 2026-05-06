@@ -5,10 +5,12 @@ import styles from './styles.module.css';
 
 export default function SubscribeForm() {
   const [email, setEmail] = React.useState('');
+  const [honeypot, setHoneypot] = React.useState('');
   const [status, setStatus] = React.useState('idle'); // idle | loading | success | error
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (honeypot) return;
     setStatus('loading');
     try {
       const res = await fetch(LOOPS_FORM_URL, {
@@ -33,6 +35,16 @@ export default function SubscribeForm() {
 
   return (
     <form onSubmit={handleSubmit} className={styles.form}>
+      <input
+        type="text"
+        value={honeypot}
+        onChange={e => setHoneypot(e.target.value)}
+        tabIndex={-1}
+        aria-hidden="true"
+        style={{position:'absolute',left:'-9999px',width:'1px',height:'1px',opacity:0}}
+        name="website"
+        autoComplete="off"
+      />
       <div className={styles.row}>
         <input
           type="email"
