@@ -1082,7 +1082,19 @@ const sidebars = {
         "proxy/health_check_routing"
       ],
     },
-    "benchmarks",
+    {
+      type: "category",
+      label: "Load Testing",
+      items: [
+        "load_testing/locustfile",
+        "load_testing/load_test",
+        "load_testing/load_test_advanced",
+        "load_testing/load_test_sdk",
+        "load_testing/load_test_rpm",
+        "load_testing/aiohttp_benchmarks",
+        "load_testing/benchmarks",
+      ]
+    },
     {
       type: "category",
       label: "Contributing",
@@ -1111,9 +1123,6 @@ const sidebars = {
         "data_retention",
         "proxy/security_encryption_faq",
         "migration_policy",
-        "load_test_advanced",
-        "load_test_sdk",
-        "load_test_rpm",
         {
           type: "category",
           label: "❤️ 🚅 Projects built on LiteLLM",
