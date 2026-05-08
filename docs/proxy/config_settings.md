@@ -207,7 +207,7 @@ router_settings:
 | cache_params | object | Parameters for the cache. [Further docs](./caching#supported-cache_params-on-proxy-configyaml) |
 | enable_redis_auth_cache | boolean | When `true`, stores virtual-key auth payloads in Redis (same client as response caching) so every worker/pod shares cached auth lookups—fewer repeated database reads on cache misses. **Requires `cache: true` and `cache_params.type: redis`** (Redis or Redis Cluster). Optional: set `general_settings.user_api_key_cache_ttl` so TTL applies consistently to memory and Redis. [Further docs](./caching#virtual-key-authentication-cache-redis) |
 | disable_end_user_cost_tracking | boolean | If true, turns off end user cost tracking on prometheus metrics + litellm spend logs table on proxy. |
-| disable_end_user_cost_tracking_prometheus_only | boolean | If true, turns off end user cost tracking on prometheus metrics only. |
+| enable_end_user_cost_tracking_prometheus_only | boolean | If true, includes the `end_user` label on Prometheus metrics. Disabled by default to keep Prometheus cardinality bounded. [Further docs](./prometheus#tracking-end_user-on-prometheus) |
 | cost_discount_config | object | Provider-specific percentage discounts applied to cost calculations. Configure under `litellm_settings`. [Further docs](./provider_discounts) |
 | cost_margin_config | object | Provider-specific or global percentage/fixed margins applied to cost calculations. Configure under `litellm_settings`. [Further docs](./provider_margins) |
 | key_generation_settings | object | Restricts who can generate keys. [Further docs](./virtual_keys.md#restricting-key-generation) |
@@ -417,6 +417,7 @@ router_settings:
 | enable_health_check_routing | boolean | If true, enables health check-driven deployment filtering to avoid routing requests to unhealthy deployments |
 | health_check_staleness_threshold | integer | Maximum age in seconds for cached health check results before marking deployments as stale |
 | health_check_ignore_transient_errors | boolean | If true, 429 (rate limit) and 408 (timeout) health check failures are ignored and do not affect routing or cooldown |
+| routing_groups | Optional[List[RoutingGroup]] | List of model groups that each apply their own routing strategy to a subset of models. Each group has a `group_name`, `models` (list of model names matched against the request's model), `routing_strategy`, and optional `routing_strategy_args`. Defaults to None. |
 
 
 ### environment variables - Reference
@@ -439,6 +440,8 @@ router_settings:
 | AIOHTTP_TCP_KEEPINTVL | Seconds between successive aiohttp TCP keepalive probes (applies when `AIOHTTP_SO_KEEPALIVE=True`). **Default is 30**
 | AIOHTTP_TRUST_ENV | Flag to enable aiohttp trust environment. When this is set to True, aiohttp will respect HTTP(S)_PROXY env vars. **Default is False**
 | AIOHTTP_TTL_DNS_CACHE | DNS cache time-to-live for aiohttp in seconds. **Default is 300**
+| AKTO_GUARDRAIL_API_BASE | Base URL for the Akto Guardrail API (e.g. `http://localhost:9090`). Used by the Akto guardrail integration.
+| AKTO_API_KEY | API key for authenticating with the Akto Guardrail service.
 | ALLOWED_EMAIL_DOMAINS | List of email domains allowed for access
 | APSCHEDULER_COALESCE | Whether to combine multiple pending executions of a job into one. **Default is False**
 | APSCHEDULER_MAX_INSTANCES | Maximum number of concurrent instances of each job. **Default is 1**
@@ -628,6 +631,7 @@ router_settings:
 | MCP_OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS | Seconds to subtract from token expiry when computing cache TTL. Default is 60
 | MCP_PER_USER_TOKEN_DEFAULT_TTL | Default TTL in seconds for per-user MCP OAuth tokens stored in Redis. Default is 43200 (12 hours)
 | MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS | Seconds to subtract from per-user MCP OAuth token expiry when computing Redis TTL. Default is 60
+| MCP_TOKEN_EXCHANGE_CACHE_MAX_SIZE | Maximum number of entries in the MCP OAuth2 token exchange cache. Default is 500
 | DEFAULT_MOCK_RESPONSE_COMPLETION_TOKEN_COUNT | Default token count for mock response completions. Default is 20
 | DEFAULT_MOCK_RESPONSE_PROMPT_TOKEN_COUNT | Default token count for mock response prompts. Default is 10
 | DEFAULT_MODEL_CREATED_AT_TIME | Default creation timestamp for models. Default is 1677610602
@@ -637,11 +641,13 @@ router_settings:
 | DEFAULT_REASONING_EFFORT_DISABLE_THINKING_BUDGET | Default reasoning effort disable thinking budget. Default is 0
 | DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET | Default high reasoning effort thinking budget. Default is 4096
 | DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET | Default low reasoning effort thinking budget. Default is 1024
+| DEFAULT_REASONING_EFFORT_MAX_THINKING_BUDGET | Default `max` reasoning effort thinking budget for legacy Anthropic models that use `thinking.budget_tokens` (Claude 4.5 series + Haiku). On Claude 4.6/4.7 the `max` tier is routed via adaptive `output_config.effort=max` instead and ignores this constant. Default is 16384
 | DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET | Default medium reasoning effort thinking budget. Default is 2048
 | DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET | Default minimal reasoning effort thinking budget. Default is 512
 | DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET_GEMINI_2_5_FLASH | Default minimal reasoning effort thinking budget for Gemini 2.5 Flash. Default is 512
 | DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET_GEMINI_2_5_FLASH_LITE | Default minimal reasoning effort thinking budget for Gemini 2.5 Flash Lite. Default is 512
 | DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET_GEMINI_2_5_PRO | Default minimal reasoning effort thinking budget for Gemini 2.5 Pro. Default is 512
+| DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET | Default `xhigh` reasoning effort thinking budget for legacy Anthropic models that use `thinking.budget_tokens`. Continues the 2&times; progression 1024 &rarr; 2048 &rarr; 4096 &rarr; 8192 from low/medium/high. On Claude 4.6/4.7 the `xhigh` tier is routed via adaptive `output_config.effort=xhigh` instead and ignores this constant. Default is 8192
 | DEFAULT_REDIS_MAJOR_VERSION | Default Redis major version to assume when version cannot be determined. Default is 7
 | DEFAULT_REDIS_SYNC_INTERVAL | Default Redis synchronization interval in seconds. Default is 1
 | DEFAULT_SEMANTIC_GUARD_EMBEDDING_MODEL | Default embedding model for Semantic Guard (route-matching guardrail). Default is "text-embedding-3-small"
@@ -793,6 +799,7 @@ router_settings:
 | JITTER | Jitter factor for retry delay calculations. Default is 0.75
 | JSON_LOGS | Enable JSON formatted logging
 | JWT_AUDIENCE | Expected audience for JWT tokens
+| JWT_ISSUER | Expected issuer (`iss` claim) for JWT tokens. When set, PyJWT verifies the `iss` claim and rejects tokens from other issuers
 | JWT_PUBLIC_KEY_URL | URL to fetch public key for JWT verification
 | LAGO_API_BASE | Base URL for Lago API
 | LAGO_API_CHARGE_BY | Parameter to determine charge basis in Lago
@@ -839,6 +846,7 @@ router_settings:
 | LITELLM_DETAILED_TIMING | When true, adds detailed per-phase timing headers to responses (`x-litellm-timing-{pre-processing,llm-api,post-processing,message-copy}-ms`). Default is false. See [latency overhead docs](../troubleshoot/latency_overhead.md)
 | LITELLM_DD_AGENT_PORT | Port of DataDog agent for LiteLLM-specific log intake. Default is 10518
 | LITELLM_DD_LLM_OBS_PORT | Port for Datadog LLM Observability agent. Default is 8126
+| LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT | Default `encoding_format` for OpenAI-compatible embedding calls when it is not set on the request or in model `litellm_params` (e.g. `float`, `base64`). Fallback is `float`. See [Embeddings](./embedding.md#embedding-encoding-format).
 | LITELLM_DONT_SHOW_FEEDBACK_BOX | Flag to hide feedback box in LiteLLM UI
 | LITELLM_DROP_PARAMS | Parameters to drop in LiteLLM requests
 | LITELLM_MODIFY_PARAMS | Parameters to modify in LiteLLM requests
@@ -1054,9 +1062,6 @@ router_settings:
 | S3_VECTORS_DEFAULT_DIMENSION | Default vector dimension for S3 Vectors RAG ingestion. Default is 1024
 | S3_VECTORS_DEFAULT_DISTANCE_METRIC | Default distance metric for S3 Vectors RAG ingestion. Options: "cosine", "euclidean". Default is "cosine"
 | SECRET_MANAGER_REFRESH_INTERVAL | Refresh interval in seconds for secret manager. Default is 86400 (24 hours)
-| SEPARATE_HEALTH_APP | If set to '1', runs health endpoints on a separate ASGI app and port. Default: '0'.
-| SEPARATE_HEALTH_PORT | Port for the separate health endpoints app. Only used if SEPARATE_HEALTH_APP=1. Default: 4001.
-| SUPERVISORD_STOPWAITSECS | Upper bound timeout in seconds for graceful shutdown when SEPARATE_HEALTH_APP=1. Default: 3600 (1 hour).
 | SERVER_ROOT_PATH | Root path for the server application
 | SEND_USER_API_KEY_ALIAS | Flag to send user API key alias to Zscaler AI Guard. Default is False
 | SEND_USER_API_KEY_TEAM_ID | Flag to send user API key team ID to Zscaler AI Guard. Default is False
@@ -1121,6 +1126,8 @@ router_settings:
 | SPEND_LOG_CLEANUP_BATCH_SIZE | Number of logs deleted per batch during cleanup. Default is 1000
 | SPEND_LOG_QUEUE_POLL_INTERVAL | Polling interval in seconds for spend log queue. Default is 2.0
 | SPEND_LOG_QUEUE_SIZE_THRESHOLD | Threshold for spend log queue size before processing. Default is 100
+| SPEND_LOG_CLEANUP_MAX_CONSECUTIVE_BATCH_FAILURES | Number of consecutive batch failures tolerated before the spend log cleanup run aborts. Default is 3
+| SPEND_LOG_CLEANUP_BATCH_FAILURE_BACKOFF_SECONDS | Backoff in seconds between failed spend log cleanup batches. Default is 0.5
 | SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE | Max size of the per-counter LRU lock dict used to coalesce concurrent spend-counter reseeds from the DB on the enforcement path. Default is 10000.
 | COROUTINE_CHECKER_MAX_SIZE_IN_MEMORY | Maximum size for CoroutineChecker in-memory cache. Default is 1000
 | DEFAULT_SHARED_HEALTH_CHECK_TTL | Time-to-live in seconds for cached health check results in shared health check mode. Default is 300 (5 minutes)

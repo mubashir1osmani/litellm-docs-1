@@ -63,6 +63,7 @@ const sidebars = {
           label: "Team Bring-Your-Own Guardrails",
         },
         ...[
+          "proxy/guardrails/qohash_qostodian_nexus",
           "proxy/guardrails/qualifire",
           "proxy/guardrails/aim_security",
           "proxy/guardrails/onyx_security",
@@ -93,7 +94,8 @@ const sidebars = {
           "proxy/guardrails/tool_permission",
           "proxy/guardrails/rubrik",
           "proxy/guardrails/zscaler_ai_guard",
-          "proxy/guardrails/javelin"
+          "proxy/guardrails/javelin",
+          "proxy/guardrails/akto",
         ].sort(),
       ],
     },
@@ -140,6 +142,7 @@ const sidebars = {
           type: "category",
           label: "Claude Code",
           items: [
+            "claude_code_compatibility",
             "tutorials/claude_responses_api",
             "tutorials/claude_code_max_subscription",
             "tutorials/claude_code_byok",
@@ -304,46 +307,53 @@ const sidebars = {
         { type: "doc", id: "proxy/docker_quick_start", label: "Getting Started Tutorial" },
         {
           type: "category",
-          label: "A2A Agent Gateway",
+          label: "Agent & MCP Gateway",
           items: [
-            "a2a",
-            "a2a_invoking_agents",
-            "a2a_agent_headers",
-            "a2a_cost_tracking",
-            "a2a_agent_permissions",
-            "a2a_iteration_budgets",
-          ],
-        },
-        {
-          type: "category",
-          label: "MCP Gateway",
-          items: [
-            "mcp",
-            "mcp_usage",
-            "mcp_openapi",
-            "mcp_oauth",
-            "mcp_aws_sigv4",
-            "mcp_zero_trust",
-            "mcp_public_internet",
-            "mcp_deployment",
-            "mcp_semantic_filter",
-            "mcp_control",
-            "mcp_cost",
-            "mcp_guardrail",
-            "mcp_server_submissions",
-            "mcp_toolsets",
             {
-              type: "link",
-              label: "MCP Troubleshooting Guide",
-              href: "/docs/mcp_troubleshoot"
+              type: "category",
+              label: "A2A Agent Gateway",
+              items: [
+                "a2a",
+                "a2a_invoking_agents",
+                "a2a_agent_headers",
+                "a2a_cost_tracking",
+                "a2a_agent_permissions",
+                "a2a_iteration_budgets",
+              ],
             },
-          ],
-        },
-        {
-          type: "category",
-          label: "Skills Gateway",
-          items: [
-            "skills_gateway",
+            {
+              type: "category",
+              label: "MCP Gateway",
+              items: [
+                "mcp",
+                "mcp_usage",
+                "mcp_openapi",
+                "mcp_oauth",
+                "mcp_obo_auth",
+                "mcp_aws_sigv4",
+                "mcp_zero_trust",
+                "mcp_public_internet",
+                "mcp_deployment",
+                "mcp_semantic_filter",
+                "mcp_control",
+                "mcp_cost",
+                "mcp_guardrail",
+                "mcp_server_submissions",
+                "mcp_toolsets",
+                {
+                  type: "link",
+                  label: "MCP Troubleshooting Guide",
+                  href: "/docs/mcp_troubleshoot"
+                },
+              ],
+            },
+            {
+              type: "category",
+              label: "Skills Gateway",
+              items: [
+                "skills_gateway",
+              ],
+            },
           ],
         },
         {
@@ -398,6 +408,7 @@ const sidebars = {
                 "proxy/ai_hub",
                 "proxy/model_compare_ui",
                 "proxy/ui_store_model_db_setting",
+                "proxy/ui/routing_groups",
               ]
             },
             {
@@ -492,6 +503,7 @@ const sidebars = {
           ],
         },
         "proxy/caching",
+        "proxy/memory",
         {
           type: "category",
           label: "Guardrails",
@@ -682,6 +694,7 @@ const sidebars = {
         "apply_guardrail",
         "bedrock_invoke",
         "interactions",
+        "memory_management",
         "image_edits",
         "image_generation",
         "image_variations",
@@ -697,6 +710,7 @@ const sidebars = {
             "mcp_usage",
             "mcp_openapi",
             "mcp_oauth",
+            "mcp_obo_auth",
             "mcp_aws_sigv4",
             "mcp_zero_trust",
             "mcp_public_internet",
@@ -975,6 +989,7 @@ const sidebars = {
             "providers/nvidia_nim_rerank",
           ]
         },
+        "providers/nvidia_riva",
         "providers/oci",
         "providers/ollama",
         "providers/openrouter",

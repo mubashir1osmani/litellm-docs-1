@@ -830,6 +830,110 @@ asyncio.run(router_acompletion())
 </TabItem>
 </Tabs>
 
+## Routing Groups - Per-Model Strategies
+
+Apply different routing strategies to different models in the same router. A **routing group** binds a list of `model_name`s to a strategy and (optionally) strategy args. Models not claimed by any group fall back to the router's top-level `routing_strategy`.
+
+:::tip
+You can also create, edit, and delete routing groups from the dashboard. See [Manage Routing Groups via UI](./proxy/ui/routing_groups.md).
+:::
+
+**When to use this:** you want latency-based routing for `gpt-4o`, but plain weighted-pick for cheaper models — without spinning up a second router.
+
+#### Rules
+
+- Each `model_name` may belong to **at most one** group. Overlap raises `ValueError` at init.
+- Models not in any group use the top-level `routing_strategy` / `routing_strategy_args` (an implicit `"default"` group). The name `"default"` is reserved.
+- Each group can override `routing_strategy_args` (e.g. latency window TTL, TPM ceilings).
+- The group is resolved per-request based on the post-pre-routing-hook `model` name.
+
+<Tabs>
+<TabItem value="config-yaml" label="LiteLLM Proxy Config.yaml">
+
+```yaml
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: gpt-4o
+    litellm_params:
+      model: azure/gpt-4o
+      api_base: os.environ/AZURE_API_BASE
+      api_key: os.environ/AZURE_API_KEY
+      api_version: "2024-08-01-preview"
+  - model_name: cheap-model
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+router_settings:
+  # fallback strategy for models not in any explicit group
+  routing_strategy: simple-shuffle
+
+  routing_groups:
+    - group_name: latency-sensitive
+      models: [gpt-4o]
+      routing_strategy: latency-based-routing
+      routing_strategy_args:
+        ttl: 3600
+```
+
+Behavior:
+- `gpt-4o` → latency-based routing across the OpenAI + Azure deployments.
+- `cheap-model` → simple-shuffle (the default group).
+
+</TabItem>
+<TabItem value="sdk" label="Python SDK">
+
+```python
+from litellm import Router
+
+router = Router(
+    model_list=[
+        {"model_name": "gpt-4o", "litellm_params": {"model": "openai/gpt-4o"}},
+        {"model_name": "gpt-4o", "litellm_params": {"model": "azure/gpt-4o", "api_base": "...", "api_key": "..."}},
+        {"model_name": "cheap-model", "litellm_params": {"model": "openai/gpt-4o-mini"}},
+    ],
+    routing_strategy="simple-shuffle",  # fallback for ungrouped models
+    routing_groups=[
+        {
+            "group_name": "latency-sensitive",
+            "models": ["gpt-4o"],
+            "routing_strategy": "latency-based-routing",
+            "routing_strategy_args": {"ttl": 3600},
+        },
+    ],
+)
+```
+
+</TabItem>
+</Tabs>
+
+#### Multiple groups
+
+Two groups can use the same strategy with different args; each gets an independent state instance.
+
+```yaml
+router_settings:
+  routing_strategy: simple-shuffle
+  routing_groups:
+    - group_name: hot-path
+      models: [gpt-4o, claude-sonnet]
+      routing_strategy: latency-based-routing
+      routing_strategy_args:
+        ttl: 60          # short window — react quickly to latency changes
+    - group_name: batch
+      models: [gpt-4o-mini, llama-70b]
+      routing_strategy: usage-based-routing-v2
+      routing_strategy_args:
+        rpm: 10000
+```
+
+#### Updating at runtime
+
+Routing groups can be updated via `Router.update_settings(routing_groups=[...])` or the proxy's `/config/update` endpoint. Per-group state is rebuilt on update.
+
 ## Traffic Mirroring / Silent Experiments
 
 Traffic mirroring allows you to "mimic" production traffic to a secondary (silent) model for evaluation purposes. The silent model's response is gathered in the background and does not affect the latency or result of the primary request.
