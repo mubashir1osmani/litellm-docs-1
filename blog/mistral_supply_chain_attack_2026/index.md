@@ -3,8 +3,7 @@ slug: mistral-supply-chain-attack-may-2026
 title: "Security Update: Mistral AI PyPI Supply Chain Attack — LiteLLM Not Impacted"
 date: 2026-05-12T10:00:00
 authors:
-  - krrish
-  - ishaan-alt
+  - mubashir
 description: "On May 11, 2026, a malicious version of the mistralai PyPI package was published as part of a coordinated supply chain attack. LiteLLM is not affected — we call Mistral exclusively via httpx, never by importing the mistralai SDK."
 tags: [security, supply-chain, mistral, incident-report]
 hide_table_of_contents: false
