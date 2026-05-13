@@ -23,36 +23,29 @@ jobs:
             exit 0
           fi
 
-          pip install markdown -q
           python3 << 'EOF'
-          import os, re, json, urllib.request, markdown as md_lib
+          import os, re, json, urllib.request
 
-          post_file = os.popen("git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'blog/**/*.md' 'blog/**/*.mdx'").read().split()[0]
-          raw = open(post_file).read()
+          for post_file in os.popen("git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'blog/**/*.md' 'blog/**/*.mdx'").read().split():
+              raw = open(post_file).read()
 
-          # Strip frontmatter
-          body = re.sub(r'^---.*?---\s*\n', '', raw, flags=re.DOTALL)
+              title = re.search(r'^title:\s*["\']?(.*?)["\']?\s*$', raw, re.M)
+              slug  = re.search(r'^slug:\s*(\S+)', raw, re.M)
 
-          blog_content = md_lib.markdown(body, extensions=['tables', 'fenced_code'])
+              payload = json.dumps({
+                  'eventName': 'new_blog_post',
+                  'eventProperties': {
+                      'blogTitle': title.group(1).strip('\'"') if title else '',
+                      'blogUrl':   f'https://docs.litellm.ai/blog/{slug.group(1) if slug else ""}',
+                  },
+              }).encode()
 
-          title = re.search(r'^title:\s*["\']?(.*?)["\']?\s*$', raw, re.M)
-          slug  = re.search(r'^slug:\s*(\S+)', raw, re.M)
-
-          payload = json.dumps({
-              'eventName': 'new_blog_post',
-              'eventProperties': {
-                  'blogTitle':   title.group(1).strip('\'"') if title else '',
-                  'blogContent': blog_content,
-                  'blogUrl':     f'https://docs.litellm.ai/blog/{slug.group(1) if slug else ""}',
-              },
-          }).encode()
-
-          req = urllib.request.Request(
-              'https://app.loops.so/api/v1/events/send',
-              headers={'Authorization': f'Bearer {os.environ["LOOPS_API_KEY"]}', 'Content-Type': 'application/json'},
-              method='POST',
-              data=payload,
-          )
-          with urllib.request.urlopen(req) as r:
-              print(r.read().decode())
+              req = urllib.request.Request(
+                  'https://app.loops.so/api/v1/events/send',
+                  headers={'Authorization': f'Bearer {os.environ["LOOPS_API_KEY"]}', 'Content-Type': 'application/json'},
+                  method='POST',
+                  data=payload,
+              )
+              with urllib.request.urlopen(req) as r:
+                  print(r.read().decode())
           EOF
