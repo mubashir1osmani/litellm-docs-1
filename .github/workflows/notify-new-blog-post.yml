@@ -4,8 +4,6 @@ on:
   push:
     branches: [main]
     paths: ['blog/**']
-  schedule:
-    - cron: '0 6 * * *'  # Daily refresh so new subscribers always have latest post data
 
 jobs:
   notify:
@@ -15,135 +13,46 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Detect new blog post
-        id: detect
-        run: |
-          if [ "${{ github.event_name }}" != "push" ]; then
-            echo "found=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          NEW_FILES=$(git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'blog/**/*.md' 'blog/**/*.mdx')
-
-          if [ -z "$NEW_FILES" ]; then
-            echo "found=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          FILE=$(echo "$NEW_FILES" | head -1)
-          TITLE=$(grep -m1 '^title:' "$FILE" | sed 's/^title: *//' | tr -d '"')
-          SLUG=$(grep -m1 '^slug:' "$FILE" | sed 's/^slug: *//' | tr -d '"')
-
-          echo "found=true" >> $GITHUB_OUTPUT
-          echo "title=$TITLE" >> $GITHUB_OUTPUT
-          echo "url=https://docs.litellm.ai/blog/$SLUG" >> $GITHUB_OUTPUT
-
-      - name: Parse latest 3 blog posts
-        id: posts
-        run: |
-          python3 << 'EOF'
-          import os, re, json
-
-          posts = []
-          for entry in os.scandir('blog'):
-              if not entry.is_dir():
-                  continue
-              for fname in ('index.md', 'index.mdx'):
-                  fpath = os.path.join(entry.path, fname)
-                  if not os.path.exists(fpath):
-                      continue
-                  content = open(fpath).read()
-                  title = re.search(r'^title:\s*["\']?(.*?)["\']?\s*$', content, re.M)
-                  date  = re.search(r'^date:\s*(\S+)', content, re.M)
-                  slug  = re.search(r'^slug:\s*(\S+)', content, re.M)
-                  if title and date:
-                      slug_val = slug.group(1) if slug else entry.name
-                      posts.append({
-                          'title': title.group(1).strip('"\''),
-                          'date':  date.group(1),
-                          'url':   f'https://docs.litellm.ai/blog/{slug_val}',
-                      })
-                  break
-
-          posts.sort(key=lambda p: p['date'], reverse=True)
-          latest = posts[:3]
-
-          with open('/tmp/latest_posts.json', 'w') as f:
-              json.dump(latest, f)
-
-          print(f"Latest posts: {json.dumps(latest, indent=2)}")
-          EOF
-
-      - name: Update subscribers and send notification
+      - name: Send new post to Loops
         env:
           LOOPS_API_KEY: ${{ secrets.LOOPS_API_KEY }}
-          NEW_POST_FOUND: ${{ steps.detect.outputs.found }}
-          NEW_POST_TITLE: ${{ steps.detect.outputs.title }}
-          NEW_POST_URL: ${{ steps.detect.outputs.url }}
         run: |
+          NEW_FILES=$(git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'blog/**/*.md' 'blog/**/*.mdx')
+          if [ -z "$NEW_FILES" ]; then
+            echo "No new blog post, skipping."
+            exit 0
+          fi
+
+          pip install markdown -q
           python3 << 'EOF'
-          import json, os, urllib.request, time
+          import os, re, json, urllib.request, markdown as md_lib
 
-          api_key  = os.environ['LOOPS_API_KEY']
-          new_post = os.environ['NEW_POST_FOUND'] == 'true'
-          latest   = json.load(open('/tmp/latest_posts.json'))
+          post_file = os.popen("git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'blog/**/*.md' 'blog/**/*.mdx'").read().split()[0]
+          raw = open(post_file).read()
 
-          def p(i, k):
-              return latest[i][k] if i < len(latest) else ''
+          # Strip frontmatter
+          body = re.sub(r'^---.*?---\s*\n', '', raw, flags=re.DOTALL)
 
-          latest_props = {
-              'latestPost1Title': p(0, 'title'), 'latestPost1Url': p(0, 'url'),
-              'latestPost2Title': p(1, 'title'), 'latestPost2Url': p(1, 'url'),
-              'latestPost3Title': p(2, 'title'), 'latestPost3Url': p(2, 'url'),
-          }
+          blog_content = md_lib.markdown(body, extensions=['tables', 'fenced_code'])
 
-          def loops(method, path, data=None):
-              req = urllib.request.Request(
-                  f'https://app.loops.so/api/v1{path}',
-                  headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
-                  method=method,
-                  data=json.dumps(data).encode() if data else None,
-              )
-              try:
-                  with urllib.request.urlopen(req) as r:
-                      return json.load(r)
-              except urllib.error.HTTPError as e:
-                  print(f'Loops API error {e.code}: {e.read().decode()}')
-                  return {}
+          title = re.search(r'^title:\s*["\']?(.*?)["\']?\s*$', raw, re.M)
+          slug  = re.search(r'^slug:\s*(\S+)', raw, re.M)
 
-          # Paginate all contacts
-          contacts, page = [], 1
-          while True:
-              result = loops('GET', f'/contacts?limit=100&page={page}')
-              batch  = result.get('contacts', [])
-              contacts.extend(batch)
-              if len(batch) < 100:
-                  break
-              page += 1
+          payload = json.dumps({
+              'eventName': 'new_blog_post',
+              'eventProperties': {
+                  'blogTitle':   title.group(1).strip('\'"') if title else '',
+                  'blogContent': blog_content,
+                  'blogUrl':     f'https://docs.litellm.ai/blog/{slug.group(1) if slug else ""}',
+              },
+          }).encode()
 
-          print(f"Found {len(contacts)} contacts")
-
-          for contact in contacts:
-              email = contact.get('email')
-              if not email:
-                  continue
-
-              # Always refresh latestPostX properties so welcome email has current data
-              loops('PUT', '/contacts/update', {'email': email, **latest_props})
-
-              # On new post push, fire the event so Loops automation sends the notification email
-              if new_post:
-                  loops('POST', '/events/send', {
-                      'email': email,
-                      'eventName': 'new_blog_post',
-                      'eventProperties': {
-                          'title': os.environ['NEW_POST_TITLE'],
-                          'url':   os.environ['NEW_POST_URL'],
-                          **latest_props,
-                      },
-                  })
-
-              time.sleep(0.05)  # Stay within Loops rate limits
-
-          print("Done.")
+          req = urllib.request.Request(
+              'https://app.loops.so/api/v1/events/send',
+              headers={'Authorization': f'Bearer {os.environ["LOOPS_API_KEY"]}', 'Content-Type': 'application/json'},
+              method='POST',
+              data=payload,
+          )
+          with urllib.request.urlopen(req) as r:
+              print(r.read().decode())
           EOF
