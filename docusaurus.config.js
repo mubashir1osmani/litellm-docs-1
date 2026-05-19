@@ -260,9 +260,9 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       announcementBar: {
-        id: 'may_townhall_2026',
+        id: 'may_townhall_2026_rescheduled',
         content:
-          '📅 <strong>LiteLLM May Town Hall</strong> — Monday, May 18 at 7:30 AM PST. Hear product updates, roadmap, and Q&A. <a href="https://forms.gle/rVeiTtpY96EKLT9i9" target="_blank" rel="noopener noreferrer">Register now →</a>',
+          '📅 <strong>LiteLLM May Town Hall — rescheduled.</strong> Apologies, due to technical difficulties the Town Hall has moved from Monday, May 18 to <strong>Tuesday, May 19 at 7:30 AM PST</strong>. Thanks for your patience! <a href="https://forms.gle/rVeiTtpY96EKLT9i9" target="_blank" rel="noopener noreferrer">Register now →</a>',
         backgroundColor: '#0078d4',
         textColor: '#ffffff',
         isCloseable: false,
@@ -297,6 +297,11 @@ const config = {
           },
           { to: '/release_notes', label: 'Changelog', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
+          {
+            href: 'https://docs.litellm-agent-platform.ai/',
+            label: 'LiteLLM Agent Platform',
+            position: 'left',
+          },
           {
             href: 'https://github.com/BerriAI/litellm',
             position: 'right',

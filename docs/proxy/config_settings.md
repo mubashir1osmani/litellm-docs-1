@@ -218,6 +218,8 @@ router_settings:
 | disable_hf_tokenizer_download | boolean | If true, it defaults to using the openai tokenizer for all models (including huggingface models). |
 | enable_json_schema_validation | boolean | If true, enables json schema validation for all requests. |
 | enable_key_alias_format_validation | boolean | If true, validates `key_alias` format on `/key/generate` and `/key/update`. Must be 2-255 chars, start/end with alphanumeric, only allow `a-zA-Z0-9_-/.@`. Default `false`. |
+| user_url_validation | boolean | Default `true`. When `true`, the proxy validates user-controlled URLs (e.g. OpenAPI `spec_path` when it is an `http(s)` URL, image URLs, and similar) before fetching: DNS is resolved and connections to non–globally-routable addresses (RFC1918, loopback, link-local, etc.) are blocked unless the **hostname in the URL** is listed in `user_url_allowed_hosts`. Set to `false` to skip validation (only if you trust who can supply URLs). **Must be set under `litellm_settings`**, not `general_settings`. |
+| user_url_allowed_hosts | array of strings | Hostnames allowed to resolve to private/internal IPs when `user_url_validation` is `true`. Match the host **as it appears in the URL** (e.g. `api.corp.internal`, `127.0.0.1`, `127.0.0.1:8080`, `[::1]:443`). For split-horizon DNS, allowlist the public hostname, not the resolved `10.x` address. **Must be set under `litellm_settings`**, not `general_settings`. See [MCP from OpenAPI](../mcp_openapi#internal-spec-urls-ssrf). |
 | disable_copilot_system_to_assistant | boolean | **DEPRECATED** - GitHub Copilot API supports system prompts. |
 | default_team_params | object | Default parameters applied to every new team created via `/team/new` (including SSO auto-created teams). Only fills in fields not explicitly set in the request. Sub-fields: `max_budget` (float), `budget_duration` (string, e.g. `"30d"`), `tpm_limit` (integer), `rpm_limit` (integer), `team_member_permissions` (array of strings, e.g. `["/team/daily/activity", "/key/generate"]`), `models` (array of strings — only applied to SSO auto-created teams). |
 
@@ -257,7 +259,7 @@ router_settings:
 | alert_types | List[str] | Control list of alert types to send to slack (Doc on alert types)[./alerting.md] |
 | enforced_params | List[str] | (Enterprise Feature) List of params that must be included in all requests to the proxy |
 | enable_oauth2_auth | boolean | (Enterprise Feature) If true, enables oauth2.0 authentication on LLM + info routes |
-| use_x_forwarded_for | str | If true, uses the X-Forwarded-For header to get the client IP address |
+| use_x_forwarded_for | str | If true, uses the `X-Forwarded-For` header to derive the client IP and (for MCP OAuth) the proxy's public origin from `X-Forwarded-Proto` / `X-Forwarded-Host` / `X-Forwarded-Port`. For MCP OAuth, headers are honored only when `mcp_trusted_proxy_ranges` is also set and the request peer's IP falls inside one of those CIDRs. For ingressed deployments, prefer [`PROXY_BASE_URL`](#environment-variables---reference). See [MCP OAuth — Reverse proxy and ingress configuration](../mcp_oauth#reverse-proxy-and-ingress-configuration). |
 | service_account_settings | List[Dict[str, Any]] | Set `service_account_settings` if you want to create settings that only apply to service account keys (Doc on service accounts)[./service_accounts.md] | 
 | image_generation_model | str | The default model to use for image generation - ignores model set in request |
 | store_model_in_db | boolean | If true, enables storing model + credential information in the DB. |
@@ -312,12 +314,13 @@ router_settings:
 | enforce_rbac | boolean | If true, enables role-based access control (RBAC) for all proxy operations |
 | forward_llm_provider_auth_headers | boolean | If true, forwards provider-specific auth headers to LLM API calls |
 | health_check_concurrency | integer | Maximum number of concurrent health check operations |
+| health_check_skip_disabled_background_models | boolean | If true, skips health probes for deployments with `model_info.disable_background_health_check: true` on on-demand `GET /health` and related health runs (not only the background loop). [Doc on health checks](health) |
 | health_check_staleness_threshold | integer | Maximum age in seconds for health check results before marking deployments as stale |
 | maximum_spend_logs_cleanup_cron | string | Cron expression for scheduling automatic spend log cleanup tasks |
 | mcp_client_side_auth_header_name | string | HTTP header name for client-side MCP server credentials |
 | mcp_internal_ip_ranges | list | CIDR ranges considered internal for non-public MCP server access control |
 | mcp_required_fields | list | List of required field names for MCP server submissions |
-| mcp_trusted_proxy_ranges | list | CIDR ranges of proxies trusted to forward X-Forwarded-For headers for MCP |
+| mcp_trusted_proxy_ranges | list | CIDR ranges of proxies trusted to forward `X-Forwarded-*` headers for MCP. Required (in addition to `use_x_forwarded_for: true`) for the MCP OAuth `authorize` endpoint to derive its public origin from those headers. Without this, headers are ignored and the proxy falls back to the request's literal base URL. For ingressed deployments, prefer [`PROXY_BASE_URL`](#environment-variables---reference). See [MCP OAuth — Reverse proxy and ingress configuration](../mcp_oauth#reverse-proxy-and-ingress-configuration). |
 | require_end_user_mcp_access_defined | boolean | If true, requires end users to have explicit MCP access permissions defined |
 | role_permissions | list | List of role-based permission configurations |
 | search_tools | list | List of search tool configurations for enabling web search capabilities |
@@ -376,6 +379,7 @@ router_settings:
 | content_policy_fallbacks | array of objects | Specifies fallback models for content policy violations. [More information here](reliability) |
 | fallbacks | array of objects | Specifies fallback models for all types of errors. [More information here](reliability) |
 | enable_tag_filtering | boolean | If true, uses tag based routing for requests [Tag Based Routing](tag_routing) |
+| enable_weighted_failover | boolean | If true and `routing_strategy` is `simple-shuffle`, a retryable failure on one deployment re-picks (weighted) across other deployments in the same model group before cross-group fallbacks. Default: false. |
 | tag_filtering_match_any | boolean | Tag matching behavior (only when enable_tag_filtering=true). `true`: match if deployment has ANY requested tag; `false`: match only if deployment has ALL requested tags |
 | cooldown_time | integer | The duration (in seconds) to cooldown a model if it exceeds the allowed failures. |
 | disable_cooldowns | boolean | If true, disables cooldowns for all models. [More information here](reliability) |
@@ -553,12 +557,18 @@ router_settings:
 | COMPETITOR_LLM_TEMPERATURE | Temperature setting for the LLM used in competitor discovery. Default is 0.3
 | CURSOR_API_BASE | API base URL for Cursor AI provider integration. Default is https://api.cursor.com
 | DATABASE_HOST | Hostname for the database server
+| DATABASE_HOST_READ_REPLICA | Hostname for the read-replica database server. Only used by the componentized deployment (experimental) when `IAM_TOKEN_DB_AUTH=True` to assemble `DATABASE_URL_READ_REPLICA` from RDS IAM env vars
 | DATABASE_NAME | Name of the database
+| DATABASE_NAME_READ_REPLICA | Database name for the read replica (defaults to `DATABASE_NAME`). Only used by the componentized deployment (experimental) when `IAM_TOKEN_DB_AUTH=True`
 | DATABASE_PASSWORD | Password for the database user
 | DATABASE_PORT | Port number for database connection
+| DATABASE_PORT_READ_REPLICA | Port number for the read replica (default 5432). Only used by the componentized deployment (experimental) when `IAM_TOKEN_DB_AUTH=True`
 | DATABASE_SCHEMA | Schema name used in the database
+| DATABASE_SCHEMA_READ_REPLICA | Schema name for the read replica (defaults to `DATABASE_SCHEMA`). Only used by the componentized deployment (experimental) when `IAM_TOKEN_DB_AUTH=True`
 | DATABASE_URL | Connection URL for the database
+| DATABASE_URL_READ_REPLICA | Optional read-replica connection URL. When set, the proxy routes read-only queries (find_*, count, group_by, query_raw/_first) to this endpoint while writes continue to use `DATABASE_URL`. Useful for Aurora-style clusters with separate reader/writer endpoints. Falls back to writer-only behavior when unset. With `IAM_TOKEN_DB_AUTH=True`, the reader IAM token is auto-refreshed alongside the writer
 | DATABASE_USER | Username for database connection
+| DATABASE_USER_READ_REPLICA | Database user for the read replica (defaults to `DATABASE_USER`). Only used by the componentized deployment (experimental) when `IAM_TOKEN_DB_AUTH=True`
 | DATABASE_USERNAME | Alias for database user
 | DATABRICKS_API_BASE | Base URL for Databricks API
 | DATABRICKS_API_KEY | API key (Personal Access Token) for Databricks API authentication
@@ -632,6 +642,7 @@ router_settings:
 | MCP_PER_USER_TOKEN_DEFAULT_TTL | Default TTL in seconds for per-user MCP OAuth tokens stored in Redis. Default is 43200 (12 hours)
 | MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS | Seconds to subtract from per-user MCP OAuth token expiry when computing Redis TTL. Default is 60
 | MCP_TOKEN_EXCHANGE_CACHE_MAX_SIZE | Maximum number of entries in the MCP OAuth2 token exchange cache. Default is 500
+| MCP_TRUSTED_REDIRECT_ORIGINS | Comma-separated allowlist of additional `redirect_uri` origins accepted by the MCP OAuth `authorize` endpoint, beyond same-origin and loopback. Each entry is `host` or `host:port`; a `*.suffix` prefix matches any strictly-deeper subdomain. HTTPS only. Use this for first-party OAuth clients on sister domains (e.g. `app.example.com`). For ingressed deployments where the proxy's own origin is wrong, set [`PROXY_BASE_URL`](#environment-variables---reference) instead. See [MCP OAuth — Reverse proxy and ingress configuration](../mcp_oauth#reverse-proxy-and-ingress-configuration).
 | DEFAULT_MOCK_RESPONSE_COMPLETION_TOKEN_COUNT | Default token count for mock response completions. Default is 20
 | DEFAULT_MOCK_RESPONSE_PROMPT_TOKEN_COUNT | Default token count for mock response prompts. Default is 10
 | DEFAULT_MODEL_CREATED_AT_TIME | Default creation timestamp for models. Default is 1677610602
@@ -880,8 +891,8 @@ router_settings:
 | LITELLM_LOG_FILE | File path to write LiteLLM logs to. When set, logs will be written to both console and the specified file
 | LITELLM_LOGGER_NAME | Name for OTEL logger 
 | LITELLM_METER_NAME | Name for OTEL Meter 
-| LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS | Optionally enable semantic logs for OTEL
-| LITELLM_OTEL_INTEGRATION_ENABLE_METRICS | Optionally enable emantic metrics for OTEL
+| LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS | Optionally enable semantic logs (`gen_ai.content.prompt`/`gen_ai.content.completion`, or `gen_ai.client.inference.operation.details` in semconv mode) for OTEL. Default `false`. See [OpenTelemetry](/docs/observability/opentelemetry_integration#configuration-reference)
+| LITELLM_OTEL_INTEGRATION_ENABLE_METRICS | Optionally enable semantic metrics (TTFT, TPOT, response duration, cost, token usage) for OTEL. Default `false`. See [OpenTelemetry](/docs/observability/opentelemetry_integration#metrics-reference)
 | LITELLM_ENABLE_PYROSCOPE | If true, enables Pyroscope CPU profiling. Profiles are sent to PYROSCOPE_SERVER_ADDRESS. Off by default. See [Pyroscope profiling](/proxy/pyroscope_profiling).
 | LITELLM_ENABLE_TEAM_STALE_ALIAS_BYPASS | When `true`, if a team's legacy `model_aliases` entry maps a public model name to an internal `model_name_<team_id>_<uuid>` deployment, pre-call handling can skip that rewrite when team-scoped sibling deployments exist for the public name—so load balancing / `order` apply across siblings. Default is `false` for backwards compatibility. See [Team-scoped models and legacy aliases](./load_balancing#team-scoped-models-and-legacy-model_aliases). When stale aliases are detected and this flag is off, the proxy may log a one-time warning.
 | PYROSCOPE_APP_NAME | Application name reported to Pyroscope. Required when LITELLM_ENABLE_PYROSCOPE is true. No default.
@@ -901,6 +912,7 @@ router_settings:
 | LITELLM_TOKEN | Access token for LiteLLM integration
 | LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES | When set to "true", routes OpenAI /v1/messages requests through chat/completions instead of the Responses API for Anthropic models. Can also be set via `litellm_settings.use_chat_completions_url_for_anthropic_messages`
 | LITELLM_ROUTE_ALL_CHAT_OPENAI_TO_RESPONSES | When set to "true", routes all OpenAI /chat/completions requests through the Responses API bridge. Recommended for OpenAI models. Can also be set via `litellm_settings.route_all_chat_openai_to_responses`
+| LITELLM_USE_LEGACY_INTERACTIONS_SCHEMA | When set to "true", uses the legacy Google Interactions API schema (`outputs` array, `2026-05-07` revision) instead of the new schema (`steps` array, `2026-05-20` revision). The legacy schema will be sunset on June 8, 2026. Can also be set via `litellm_settings.use_legacy_interactions_schema`
 | LITELLM_USER_AGENT | Custom user agent string for LiteLLM API requests. Used for partner telemetry attribution
 | LITELLM_WORKER_STARTUP_HOOKS | Comma-separated list of `module.path:function_name` callables to run in each worker process during startup. Runs early in the worker lifecycle (before config/DB loading). Useful for re-initializing per-process state like [gflags](https://github.com/google/python-gflags). See [Worker Startup Hooks](/proxy/worker_startup_hooks) for details
 | LITELLM_PRINT_STANDARD_LOGGING_PAYLOAD | If true, prints the standard logging payload to the console - useful for debugging
@@ -988,7 +1000,12 @@ router_settings:
 | OTEL_SERVICE_NAME | Service name identifier for OpenTelemetry
 | OTEL_TRACER_NAME | Tracer name for OpenTelemetry tracing
 | OTEL_LOGS_EXPORTER | Exporter type for OpenTelemetry logs (e.g., console)
-| OTEL_IGNORE_CONTEXT_PROPAGATION | When true, ignore parent span context propagation in OpenTelemetry callbacks
+| OTEL_IGNORE_CONTEXT_PROPAGATION | When true, ignore parent span context propagation (inbound `traceparent` headers and any active span) so every LiteLLM trace is its own root. Default `false`
+| OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT | Controls whether prompts and completions are captured in OpenTelemetry traces. Accepts `NO_CONTENT` (default per spec), `SPAN_ONLY`, `EVENT_ONLY`, `SPAN_AND_EVENT`, or the boolean form (`true` maps to `EVENT_ONLY`, `false` to `NO_CONTENT`)
+| OTEL_SEMCONV_STABILITY_OPT_IN | Set to `gen_ai_latest_experimental` to emit spans following the latest [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/). Renames the LLM-call span to `{operation} {model}`, suppresses `raw_gen_ai_request`, adds `gen_ai.provider.name`, and consolidates events. Comma-separable per OTEL spec
+| USE_OTEL_LITELLM_REQUEST_SPAN | When `true`, the proxy emits a discrete `litellm_request` span per LLM call as a child of the `Received Proxy Server Request` span. Default `false` (since v1.81.0); LLM-call attributes are set directly on the proxy root span. See [Why don't I see a `litellm_request` span?](/docs/observability/opentelemetry_integration#why-dont-i-see-a-litellm_request-span)
+| OTEL_DEBUG | When `true`, prints exporter and span-creation diagnostics to stderr. Useful when traces aren't reaching your backend. Default `false`
+| DEBUG_OTEL | Alias for `OTEL_DEBUG`
 | PAGERDUTY_API_KEY | API key for PagerDuty Alerting
 | PANW_PRISMA_AIRS_API_KEY | API key for PANW Prisma AIRS service
 | PANW_PRISMA_AIRS_API_BASE | Base URL for PANW Prisma AIRS service
@@ -1020,7 +1037,7 @@ router_settings:
 | PROMETHEUS_URL | URL for Prometheus service
 | PROMPTLAYER_API_KEY | API key for PromptLayer integration
 | PROXY_ADMIN_ID | Admin identifier for proxy server
-| PROXY_BASE_URL | Base URL for proxy service
+| PROXY_BASE_URL | Base URL for proxy service. Also used by the MCP OAuth `authorize` endpoint as the proxy's public origin when validating browser-supplied `redirect_uri` values — set this to the exact origin users see in their address bar (e.g. `https://llm.example.com`) when LiteLLM runs behind a TLS-terminating ingress. Full origin only: scheme + host (+ port if non-default), no trailing slash, no path. When set, it takes precedence over `X-Forwarded-*` headers (which only apply when [`use_x_forwarded_for`](#general_settings---reference) is `true` AND the request peer is in [`mcp_trusted_proxy_ranges`](#general_settings---reference)). See [MCP OAuth — Reverse proxy and ingress configuration](../mcp_oauth#reverse-proxy-and-ingress-configuration).
 | PROXY_BATCH_WRITE_AT | Time in seconds to wait before batch writing spend logs to the database. Default is 10
 | PROXY_BATCH_POLLING_INTERVAL | Time in seconds to wait before polling a batch, to check if it's completed. Default is 6000s (1 hour)
 | PROXY_BATCH_POLLING_ENABLED | Set to `false` to disable the `CheckBatchCost` and `CheckResponsesCost` background polling jobs entirely. Useful for emergency mitigation on installs with large numbers of stale managed objects. Default is `true`
