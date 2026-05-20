@@ -1,6 +1,8 @@
 /* ── Page shell ───────────────────────────────────────────────────────── */
 .page {
   max-width: 860px;
+  width: 100%;
+  box-sizing: border-box;
   margin: 0 auto;
   padding: 0 2rem;
 }
@@ -26,6 +28,7 @@
   line-height: 1.1;
   color: #111827;
   margin: 0 0 0.75rem;
+  overflow-wrap: break-word;
 }
 
 .heroSub {
@@ -34,6 +37,7 @@
   max-width: 540px;
   line-height: 1.65;
   margin: 0 0 1.25rem;
+  overflow-wrap: break-word;
 }
 
 .hiringBtn {
@@ -54,7 +58,7 @@
 
 /* ── Marquee ──────────────────────────────────────────────────────────── */
 .marqueeWrap {
-  margin: 2.5rem 0 0;
+  margin: 2.5rem -2rem 0;
   padding: 1.25rem 0;
   border-top: 1px solid #f3f4f6;
   border-bottom: 1px solid #f3f4f6;
@@ -74,6 +78,7 @@
 .marqueeOuter {
   position: relative;
   overflow: hidden;
+  max-width: 100%;
 }
 
 .fadeLeft {
@@ -187,6 +192,7 @@
   color: #111827;
   margin: 0 0 0.5rem;
   transition: color 0.12s;
+  overflow-wrap: break-word;
 }
 
 .titleLink:hover .title {
@@ -257,6 +263,55 @@
 
 .pageLink:hover {
   color: #0ea5e9;
+}
+
+/* ── Mobile ───────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .page {
+    padding: 0 1.25rem;
+  }
+
+  .marqueeWrap {
+    margin-left: -1.25rem;
+    margin-right: -1.25rem;
+  }
+
+  .hero {
+    padding: 2rem 0 0;
+  }
+
+  .heroTitle {
+    font-size: 2rem;
+  }
+
+  .heroSub {
+    font-size: 0.9rem;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    white-space: nowrap;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .post {
+    padding: 1.75rem 0;
+  }
+
+  .title {
+    font-size: 1.2rem;
+  }
 }
 
 /* ── Dark mode ────────────────────────────────────────────────────────── */

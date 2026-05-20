@@ -107,3 +107,22 @@
 [data-theme='dark'] .ctaSub {
   color: #9ca3af;
 }
+
+@media (max-width: 996px) {
+  .backOuter {
+    display: none;
+  }
+
+  .ctaOuter {
+    padding: 0 1.25rem 3rem;
+  }
+
+  .cta {
+    padding: 1.75rem 1.25rem;
+    border-radius: 12px;
+  }
+
+  .ctaLink {
+    font-size: 1.2rem;
+  }
+}

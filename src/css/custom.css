@@ -3,6 +3,10 @@
  * Infima (Docusaurus CSS framework) variables + custom styling.
  */
 
+html {
+  overflow-x: hidden;
+}
+
 /* =========================================
    FONTS
    ========================================= */
@@ -957,6 +961,40 @@ video {
 
 [data-theme='dark'].blog-wrapper article .markdown a {
   color: #38bdf8;
+}
+
+/* =========================================
+   BLOG — Mobile
+   ========================================= */
+
+.blog-wrapper,
+.blog-post-page {
+  overflow-x: clip;
+}
+
+@media (max-width: 996px) {
+  .blog-post-page main.col--7 {
+    padding: 0 1.25rem !important;
+  }
+
+  .blog-wrapper article header h1 {
+    font-size: 1.6rem;
+  }
+
+  .blog-wrapper article .markdown h2 {
+    font-size: 1.2rem;
+  }
+
+  .blog-wrapper article .markdown h3 {
+    font-size: 1rem;
+  }
+
+  .blog-wrapper article .markdown table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
 }
 
 /* =========================================
